@@ -33,7 +33,7 @@ payBtn.addEventListener("click", async () => {
     // Step 2: Configure Razorpay Checkout
     const options = {
 
-        key: "rzp_test_T7kRTUPeQJo3KF",
+        key: "rzp_test_***********3KF",
 
         amount: data.order.amount,
 
