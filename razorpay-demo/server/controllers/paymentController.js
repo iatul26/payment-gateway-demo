@@ -1,41 +1,43 @@
-const Razorpay = require("razorpay");
+const razorpay = require("../config/razorpay");
 const verifySignature = require("../utils/verifySignature");
-
-const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+const Payment = require("../models/Payment");
 
 const createOrder = async (req, res) => {
-    try {
-        const { amount } = req.body;
+  try {
+    const { amount } = req.body;
 
-        if (!amount || amount <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid amount",
-            });
-        }
-
-        const order = await razorpay.orders.create({
-            amount: Number(amount) * 100, // Convert ₹ to paise
-            currency: "INR",
-            receipt: `receipt_${Date.now()}`,
-        });
-
-        res.json({
-            success: true,
-            order,
-        });
-
-    } catch (error) {
-        console.error(error);
-
-        res.status(500).json({
-            success: false,
-            message: "Order creation failed",
-        });
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid amount",
+      });
     }
+
+    const order = await razorpay.orders.create({
+      amount: Number(amount) * 100, // Convert ₹ to paise
+      currency: "INR",
+      receipt: `receipt_${Date.now()}`,
+    });
+
+    await Payment.create({
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      status: "Created",
+    });
+
+    res.json({
+      success: true,
+      order,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Order creation failed",
+    });
+  }
 };
 
 const verifyPayment = async (req, res) => {
@@ -52,16 +54,33 @@ const verifyPayment = async (req, res) => {
             razorpay_signature
         );
 
-        if (isValid) {
-            return res.json({
-                success: true,
-                message: "Payment Verified Successfully",
+        if (!isValid) {
+            return res.status(400).json({
+                success: false,
+                message: "Payment Verification Failed",
             });
         }
 
-        return res.status(400).json({
-            success: false,
-            message: "Payment Verification Failed",
+        const payment = await Payment.findOne({
+            orderId: razorpay_order_id,
+        });
+
+        if (!payment) {
+            return res.status(404).json({
+                success: false,
+                message: "Order not found",
+            });
+        }
+
+        payment.paymentId = razorpay_payment_id;
+        payment.signature = razorpay_signature;
+        payment.status = "Paid";
+
+        await payment.save();
+
+        return res.json({
+            success: true,
+            message: "Payment Verified Successfully",
         });
 
     } catch (error) {
@@ -69,12 +88,12 @@ const verifyPayment = async (req, res) => {
 
         return res.status(500).json({
             success: false,
-            message: "Internal Server Error",
+            message: "Something went wrong",
         });
     }
 };
 
 module.exports = {
-    createOrder,
-    verifyPayment,
+  createOrder,
+  verifyPayment,
 };
